@@ -10,12 +10,12 @@ to run the analysis:
 
 for a single subject:
 ```zsh
-python streamlined.py {subject-number}
+python main.py {subject-number}
 ```
 
 or to for every subject:
 ```zsh
 for i in {1..9}; do
-    python streamlined.py $i
+    python main.py $i
 done
 ```
