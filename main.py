@@ -3,8 +3,8 @@ import numpy as np
 import json
 import os
 import sys
-from core_functions import subsampling, apply_subsampling_indices, compute_lag_correlation, compute_rsa_matrix_corr, compute_rdm_series
-from PCR_alpha import compute_rsa_matrix_PCR
+from functions.core_functions import subsampling, apply_subsampling_indices, compute_lag_correlation, compute_rsa_matrix_corr, compute_rdm_series
+from functions.PCR_alpha import compute_rsa_matrix_PCR
 
 
 # ===== load data =====

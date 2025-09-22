@@ -1,6 +1,6 @@
 import numpy as np
 from sklearn.decomposition import PCA
-from core_functions import zscore, compute_rsa_matrix_corr, compute_lag_correlation
+from functions.core_functions import zscore, compute_rsa_matrix_corr, compute_lag_correlation
 
 def regression_border(model_rdm_series_list, averaging_diagonal_time_tps, correlation_threshold=0.1):
     '''
