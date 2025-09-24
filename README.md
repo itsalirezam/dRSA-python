@@ -9,12 +9,12 @@
 - run:    
     for a single subject:
     ```zsh
-    python streamlined.py {subject-number}
+    python main.py {subject-number}
     ```
     
     for multiple subjects:
     ```zsh
     for i in {1..9}; do
-        python streamlined.py $i
+        python main.py $i
     done
     ```
