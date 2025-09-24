@@ -12,7 +12,7 @@
     python streamlined.py {subject-number}
     ```
     
-    or to for every subject:
+    for multiple subjects:
     ```zsh
     for i in {1..9}; do
         python streamlined.py $i
