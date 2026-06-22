@@ -24,12 +24,11 @@ model2 = np.load('path/to/model2.npy')
 
 save_rsa_matrices = True
 save_plots = True
-
 mask = True
-if mask:
-    mask = np.squeeze(np.load('path/to/mask.npy'))
-else:
-    mask = None
+mask_path = "/path/to/mask.npy"
+time_lock = False # +centering candidate tps
+
+mask = np.squeeze(np.load(mask_path)) if mask else None
 
 double_precision = False
 
@@ -75,6 +74,15 @@ adtw_in_tps = averaging_diagonal_time_window_sec * resolution
 # this is to avoid noisy diagonal averaging in the dRSA matrix edges
 # and also, not to use the models outside the -3 +3 window for the PCR.
 subsample_tps = SubSampleDurSec * resolution # subsample size in tps - also number of RDMs calculated for each subsample
+
+# ==== Time-Lock settings ====
+
+if time_lock == True:
+    candidate_path = "path/to/candidate_start_idx.npy"
+    manual_subsample_start_candidates = np.squeeze(np.load(candidate_path)) - subsample_tps/2
+    # set to None if None
+
+tps_from_center = 30 if time_lock else None # in tps
 
 
 # ===== run dRSA =====
