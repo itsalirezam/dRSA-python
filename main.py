@@ -1,6 +1,6 @@
 '''
-run: python main_v8.py {config_path} {subject}
-dask run: python main_v8.py config.yaml 3 --dask --scheduler tcp://10.40.40.17:8786
+run: python main.py {config_path} {subject}
+dask run: python main.py config.yaml 3 --dask --scheduler tcp://10.40.40.17:8786
 
 '''
 
@@ -12,8 +12,8 @@ import yaml
 from pathlib import Path
 import argparse, importlib
 
-from core_functions_v8 import *
-from makeplot_v8 import make_plots
+from core_functions import *
+from makeplot import make_plots
 
 print(f'\n\nStarted on {time.ctime()} Local Time')
 
@@ -55,7 +55,7 @@ if args.dask:
         sys.exit(f"Could not connect to dask scheduler at {args.scheduler}: {e}")
     print(dask_client)
 
-    dask_client.upload_file('core_functions_v8.py')
+    dask_client.upload_file('core_functions.py')
     if rsa_computation_method != 'correlation' and custom_rsa_computation_module:
         dask_client.upload_file(f"{custom_rsa_computation_module}.py")
 
