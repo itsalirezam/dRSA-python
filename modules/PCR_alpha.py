@@ -26,7 +26,7 @@ def regression_border(model_rdm_series_list, averaging_diagonal_time_tps, correl
     return exclusion_window_for_models
 
 
-def compute_rsa_matrix_PCR(neural_rdm_series, model_rdm_series_list,
+def compute_rsa_matrix(neural_rdm_series, model_rdm_series_list,
                            averaging_diagonal_time_tps=300,
                            variance_threshold=0.85,
                            client=None):

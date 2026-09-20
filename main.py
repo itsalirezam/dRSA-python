@@ -1,55 +1,132 @@
+'''
+run: python main_v8.py {config_path} {subject}
+dask run: python main_v8.py config.yaml 3 --dask --scheduler tcp://10.40.40.17:8786
+
+'''
+
+
 import matplotlib.pyplot as plt
 import numpy as np
-import json
-import os
-import sys
-from functions.core_functions import subsampling, apply_subsampling_indices, compute_lag_correlation, compute_rsa_matrix_corr, compute_rdm_series
-from functions.PCR_alpha import compute_rsa_matrix_PCR
+import json, os, sys, time, re
+import yaml
+from pathlib import Path
+import argparse, importlib
+
+from core_functions_v8 import *
+from makeplot_v8 import make_plots
+
+print(f'\n\nStarted on {time.ctime()} Local Time')
+
+# ===============
+
+parser = argparse.ArgumentParser()
+parser.add_argument('config_path')
+parser.add_argument('subject', type=int)
+parser.add_argument('--dask', action='store_true', help='Run on dask cluster')
+parser.add_argument('--scheduler', default=None, help='Dask scheduler address, e.g. tcp://10.40.40.17:8786 (required with --dask)')
+args = parser.parse_args()
+
+# ===============
+
+subject = args.subject
+
+config_path = args.config_path
+with open(config_path) as f:
+    config = yaml.safe_load(f)
 
 
-# ===== load data =====
+rsa_computation_method = config['rsa_computation_method']
+custom_rsa_computation_module = config.get('custom_rsa_computation_module', None)
 
-subject = int(sys.argv[1]); print(f'subject: {subject}')
-frequency_band = 'unfiltered'
-region = 'all'
+# ===== dask cluster only =====
 
-# shape of loaded data should be (features, tps)
-neural_data = np.load(f'/path/to/{region}-{frequency_band}/sub{subject}-{frequency_band}-{region}.npy') # change as needed
+dask_client = None
 
-model1 = np.load('path/to/model1.npy')
-model2 = np.load('path/to/model2.npy')
+if args.dask:
+    if not args.scheduler:
+        parser.error("--scheduler is required when --dask is set")
+    if not re.match(r'^tcp://[\w.\-]+:\d+$', args.scheduler):
+        parser.error(f"--scheduler must look like tcp://<host>:<port>, got: {args.scheduler!r}")
+
+    from dask.distributed import Client
+    try:
+        dask_client = Client(args.scheduler, timeout='10s')
+    except OSError as e:
+        sys.exit(f"Could not connect to dask scheduler at {args.scheduler}: {e}")
+    print(dask_client)
+
+    dask_client.upload_file('core_functions_v8.py')
+    if rsa_computation_method != 'correlation' and custom_rsa_computation_module:
+        dask_client.upload_file(f"{custom_rsa_computation_module}.py")
+
+elif args.scheduler:
+    parser.error("--scheduler was given but --dask was not set — did you forget --dask?")
+
+# ===== configuration =====    
+
+## load models
+
+selected_models = []
+selected_models_labels = []
+model_rdm_metrics = []
+
+for model_config in config['models']:
+
+    model = np.load(model_config['path'])
+
+    selected_models.append(model)
+    selected_models_labels.append(model_config['name'])
+    model_rdm_metrics.append(model_config['rdm_metric'])
+
+## other
+
+frequency_band = config['frequency_band']
+region = config['region']
+neural_data_folder_path = config['neural_data_folder_path']
+simulation = config['simulation'] # boolean
+
+if simulation:
+    selected_neural_data = np.load(config['simulation_neural_data_path'])
+else:
+    selected_neural_data = np.load(f'{neural_data_folder_path}{region}-{frequency_band}/sub{subject}-{frequency_band}-{region}.npy')
+
+neural_rdm_metric = config['neural_rdm_metric']
+n_subsamples = config['n_subsamples']
+subsampling_iterations = config['subsampling_iterations']
+subsample_duration_sec = config['subsample_duration_sec']
+averaging_diagonal_time_window_sec = config['averaging_diagonal_time_window_sec']
+resolution = config['resolution']
+time_lock = config['time_lock']
+double_precision = config['double_precision']
+save_rsa_matrices = config['save_rsa_matrices']
+save_plots = config['save_plots']
 
 
-# ===== settings =====
+## derived pameters and variables
 
-save_rsa_matrices = True
-save_plots = True
-mask = True
-mask_path = "/path/to/mask.npy"
-time_lock = False # +centering candidate tps
+tps = selected_neural_data.shape[1]
+adtw_in_tps = int(averaging_diagonal_time_window_sec * resolution)
+subsample_tps = int(subsample_duration_sec * resolution)
 
-mask = np.squeeze(np.load(mask_path)) if mask else None
+## mask
 
-double_precision = False
+if config['mask']:
+    mask = np.squeeze(np.load(config['mask_path']))
+else:
+    mask = None
+
+## time lock
+
+if time_lock:
+    candidate_path = config['candidate_path']
+    manual_subsample_start_candidates = (np.squeeze(np.load(candidate_path)) - subsample_tps // 2)
+else:
+    manual_subsample_start_candidates = None
 
 
-# ===== select data and set RDM metrics =====                    
+## check assumptions - do lengths match
 
-selected_neural_data = neural_data
-
-selected_models = [model1, model2]
-
-selected_models_labels = ['Model 1 Name', 'Model 2 Name']
-
-neural_rdm_metric = 'correlation'
-
-model_rdm_metrics = ['correlation', 'cosine']
-# accepts: euclidean - cosine - hamming - correlation - jaccard
-
-rsa_computation_method = 'correlation'
-# accepts: correlation - PCR
-
-# check if lengths match
+### check model counts
 if not (len(selected_models) == len(selected_models_labels) == len(model_rdm_metrics)):
     raise ValueError(
         f"Lengths do not match: "
@@ -58,120 +135,63 @@ if not (len(selected_models) == len(selected_models_labels) == len(model_rdm_met
         f"metrics={len(model_rdm_metrics)}"
     )
 
+### check model time points
+mismatches = []
+for model, label in zip(selected_models, selected_models_labels):
+    if model.shape[1] != tps:
+        mismatches.append(f"{label}: {model.shape}")
 
-# ===== set parameters =====
+if mismatches:
+    raise ValueError(
+        f"Model and neural data shapes don't match:\n" +
+        "\n".join(mismatches)
+    )
 
-n_subsamples = 20
-subsampling_iterations = 100
-
-SubSampleDurSec = 5
-averaging_diagonal_time_window_sec = 3
-
-resolution = 100
-
-tps = selected_neural_data.shape[1]
-adtw_in_tps = averaging_diagonal_time_window_sec * resolution
-# this is to avoid noisy diagonal averaging in the dRSA matrix edges
-# and also, not to use the models outside the -3 +3 window for the PCR.
-subsample_tps = SubSampleDurSec * resolution # subsample size in tps - also number of RDMs calculated for each subsample
-
-# ==== Time-Lock settings ====
-
-if time_lock == True:
-    candidate_path = "path/to/candidate_start_idx.npy"
-    manual_subsample_start_candidates = np.squeeze(np.load(candidate_path)) - subsample_tps/2
-    # set to None if None
-
-tps_from_center = 30 if time_lock else None # in tps
-
+if mask is not None and mask.shape[0] != tps:
+    raise ValueError('mask time points do not match neural data')
 
 # ===== run dRSA =====
 
-# get subsample indices
-subsample_indices = subsampling(tps, subsample_tps, n_subsamples, subsampling_iterations, mask=mask, random_state=None)
-print("\u2713 subsample indices")
+rsa_matrices = run_drsa_pipeline(
+    neural_data=selected_neural_data,
+    models=selected_models,
+    model_labels=selected_models_labels,
+    model_rdm_metrics=model_rdm_metrics,
+    neural_rdm_metric=neural_rdm_metric,
+    rsa_computation_method=rsa_computation_method,
+    n_subsamples=n_subsamples,
+    subsampling_iterations=subsampling_iterations,
+    subsample_tps=subsample_tps,
+    adtw_in_tps=adtw_in_tps,
+    time_lock=time_lock,
+    manual_subsample_start_candidates=manual_subsample_start_candidates,
+    mask=mask,
+    double_precision=double_precision,
+    custom_rsa_computation_module=custom_rsa_computation_module,
+    dask_client=dask_client,
+)
 
-# use the indices to subsample from data
-subsampled_neural_data = apply_subsampling_indices(selected_neural_data, subsample_indices)
-subsampled_models_features = [apply_subsampling_indices(model, subsample_indices) for model in selected_models]
-print("\u2713 extract subsamples from data")
 
-# in all iterations, compute rdm for each time point
-neural_rdm_series = compute_rdm_series(subsampled_neural_data, neural_rdm_metric) 
-# each time point has a separate n_subsamples * n_subsamples RDM (but flattened)
-print("\u2713 compute neural RDM series")
-model_rdm_series_list = [compute_rdm_series(subsampled_models_features[i], model_rdm_metrics[i]) for i in range(len(selected_models))]
-print("\u2713 compute model RDM series")
+file_name = f'sub{subject}-{frequency_band}_dRSA_matrices-{rsa_computation_method}-TL{time_lock}'
 
-if not double_precision:
-    # make them float32 for memory efficiency
-    neural_rdm_series = neural_rdm_series.astype(np.float32)
-    model_rdm_series_list = [model_rdm_series.astype(np.float32) for model_rdm_series in model_rdm_series_list]
-
-# compute rsa matrices for each model
-print("... computing dRSA matrices")
-if rsa_computation_method == 'correlation':
-    rsa_matrices = [compute_rsa_matrix_corr(neural_rdm_series, model_rdm_series_list[i]) for i in range(len(model_rdm_series_list))]
-elif rsa_computation_method == 'PCR':
-    rsa_matrices = compute_rsa_matrix_PCR(neural_rdm_series, model_rdm_series_list, averaging_diagonal_time_tps=adtw_in_tps)
-print("\u2713 compute dRSA matrices")
-
-# saving dRSA matrices:
+## save dRSA matrices
 if save_rsa_matrices:
-    rsa_matrices_arr = np.array(rsa_matrices, dtype=float) # turn into an array
-    os.makedirs('results', exist_ok=True)
-    output_path = f'results/sub{subject}-{frequency_band}_dRSA_matrices-{rsa_computation_method}.npy'
-    np.save(output_path, rsa_matrices_arr)
+    os.makedirs('_results', exist_ok=True)
+    output_path = Path('_results')
+    np.save(output_path / file_name, rsa_matrices)
 
     # save labels for plotting later
-    with open("results/selected_model_labels.json", "w") as f:
+    with open("_results/selected_model_labels.json", "w") as f:
         json.dump(selected_models_labels, f)
 
-
-# ===== Compute lag correlations and plot =====
-
-fig, axs = plt.subplots(len(selected_models), 2, figsize=(11, 2.7 * len(selected_models)))
-
-for i, rsa_matrix in enumerate(rsa_matrices):
-    model_name = selected_models_labels[i]
-    lags, lag_corr = compute_lag_correlation(rsa_matrix, adtw_in_tps)
-
-    lags = lags/resolution
-
-    # RSA matrix plot
-    ax_matrix = axs[i, 0] if len(selected_models) > 1 else axs[0]
-    im = ax_matrix.imshow(rsa_matrix, cmap='viridis', aspect='auto')
-    ax_matrix.set_title(f'dRSA Matrix     Model: {model_name}', fontsize=8)
-    ax_matrix.set_xlabel('Model time', fontsize=7)
-    ax_matrix.set_ylabel('Neural time', fontsize=7)
-    fig.colorbar(im, ax=ax_matrix, fraction=0.046, pad=0.04)
-
-    # Lag correlation plot
-    ax_lag = axs[i, 1] if len(selected_models) > 1 else axs[1]
-    ax_lag.plot(lags, lag_corr)
-    ax_lag.axvline(0, color='gray', linestyle='--')
-    ax_lag.axhline(0, color='gray', linestyle='--')
-    # ax_lag.set_title(f'Lagged Correlation', fontsize=8)
-    ax_lag.set_xlabel('Lag (neural time - model time) [s]', fontsize=7)
-    ax_lag.set_ylabel('Correlation', fontsize=7)
-
-    # Mark the peak
-    peak_idx = np.argmax(lag_corr)            # index of maximum correlation
-    peak_lag = lags[peak_idx]    # lag at maximum
-    peak_val = lag_corr[peak_idx]             # maximum correlation value
-
-    ax_lag.plot(peak_lag, peak_val, 'ro', markersize=2)    # red dot at the peak
-    ax_lag.annotate(f'Peak: {peak_val:.2f}\nLag: {peak_lag:.2f}s',
-                    xy=(peak_lag, peak_val),
-                    xytext=(peak_lag + 0.2, peak_val),  # offset text a bit
-                    arrowprops=dict(arrowstyle='->', color='red'),
-                    fontsize=7)
-
-# Clean up layout
-plt.tight_layout(rect=[0, 0, 1, 0.97])
-plt.subplots_adjust(hspace=0.3, wspace=0.3)
-# plt.suptitle(f'dRSA Subject {subject}', fontsize=10, fontweight='bold')
+## save plot
 if save_plots:
-    os.makedirs('results', exist_ok=True)
-    plt.savefig(f'results/sub_{subject}-{frequency_band}_plot-{rsa_computation_method}.png', dpi=300)
-# plt.show()
+    make_plots(
+        rsa_data=rsa_matrices,
+        model_labels=selected_models_labels,
+        resolution=resolution,
+        averaging_diagonal_time_window_sec=averaging_diagonal_time_window_sec,
+        output_dir=Path('_results'),
+        plotting_config=config,
+        custom_name=file_name
+    )

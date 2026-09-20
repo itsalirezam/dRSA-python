@@ -1,0 +1,19 @@
+averaging_diagonal_time_window_sec: 1.5
+resolution: 100
+
+# plot type
+merge_model_plots: false           # true = one combined plot; false = grid, one row per model
+
+# stats
+statistical_testing: true         # run cluster permutation stats on the lag plots
+cluster_p_value_threshold: 0.05    # significance threshold for those clusters
+
+# Time lock
+TL_frame: false                    # time lock: averages diagonal only within the time lock frame
+tps_from_center: 30                # tps from center to take for the frame
+
+# other
+save_subs_lags: false              # true = also dump subs_lags.npy (n_subs, n_models, n_lags)
+
+
+custom_name: output

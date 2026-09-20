@@ -1,17 +1,24 @@
 '''
-Lasso Regression instead of PCA
+uses dask to run a single task over any number of available cluster workers
+while scattering memory
+
+does not use batching, creates a large task graph for dask, each cpu core gets one task at a time
+
+PCR2 means PCs are taken that meet a threshold of explaining more than x variance (not cumulatie 99&)
 
 '''
 
-
 import numpy as np
 from core_functions_v7 import compute_rsa_matrix_corr, compute_lag_correlation, zscore
+from sklearn.decomposition import PCA
 
-from dask.distributed import Future, progress
-from sklearn.linear_model import Lasso
+from dask.distributed import progress
+
+from threading import Lock
+log_lock = Lock()
 
 
-def regression_border(model_rdm_series_list, averaging_diagonal_time_tps, correlation_threshold=0.1):
+def regression_border(model_rdm_series_list, averaging_diagonal_time_tps, correlation_threshold=0.3):
     '''
     this is to decide what timepoints to exclude of the same model, from regressing out.
 
@@ -47,13 +54,14 @@ def compute_single_t_neural_task(i, t_neural,
     num_other_models = n_models - 1
     max_predictors = 1 + n_models * (2 * averaging_diagonal_time_tps + 1)
 
+    # PCA setup
+    pca = PCA(svd_solver='full')
+
     # allocate once per task
     X = np.empty((rdm_len, max_predictors), dtype=neural_rdm_series.dtype)
     y = neural_rdm_series[i, t_neural]
     y = zscore(y)
     result = np.zeros((n_models, subsample_tps), dtype=neural_rdm_series.dtype)
-
-    lasso = Lasso(alpha=0.2, fit_intercept=False, max_iter=10000)
 
     for t_model in range(subsample_tps):
         start = max(0, t_model - averaging_diagonal_time_tps)
@@ -88,17 +96,24 @@ def compute_single_t_neural_task(i, t_neural,
             # zscore scale
             Z = zscore(X[:, :n_predictors])
 
-            lasso.fit(Z, y)
-            betas = lasso.coef_
+            X_pca = pca.fit_transform(Z)                         # (rdm_len, comps<=rdm_len)
+            explained = pca.explained_variance_ratio_
+            important_pc_indices = np.where(explained >= variance_threshold)[0]
 
-            result[m_interest, t_model] = betas[0]
+            X_pca_reduced = X_pca[:, important_pc_indices]
+            loadings_reduced = pca.components_[important_pc_indices]  # (n_components, n_predictors)
+
+            betas, *_ = np.linalg.lstsq(X_pca_reduced, y, rcond=None)
+
+            beta_model_space = loadings_reduced.T @ betas
+            result[m_interest, t_model] = beta_model_space[0]
 
     return (i, t_neural, result)
 
 
-def compute_rsa_matrix_PCR(neural_rdm_series, model_rdm_series_list,
+def compute_rsa_matrix(neural_rdm_series, model_rdm_series_list,
                            averaging_diagonal_time_tps=300,
-                           variance_threshold=0.99, client=None):
+                           variance_threshold=0.001, client=None):
 
     if client is None:
         raise ValueError("A Dask client must be provided for parallel computation.")

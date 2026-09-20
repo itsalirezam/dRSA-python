@@ -1,15 +1,17 @@
 '''
-Ridge Regression instead of PCA
+Lasso Regression instead of PCA
 
 '''
+
+
 import numpy as np
 from core_functions_v7 import compute_rsa_matrix_corr, compute_lag_correlation, zscore
-from sklearn.linear_model import Ridge
 
-from itertools import repeat
 from dask.distributed import Future, progress
+from sklearn.linear_model import Lasso
 
-def regression_border(model_rdm_series_list, averaging_diagonal_time_tps, correlation_threshold=0.3):
+
+def regression_border(model_rdm_series_list, averaging_diagonal_time_tps, correlation_threshold=0.1):
     '''
     this is to decide what timepoints to exclude of the same model, from regressing out.
 
@@ -45,15 +47,13 @@ def compute_single_t_neural_task(i, t_neural,
     num_other_models = n_models - 1
     max_predictors = 1 + n_models * (2 * averaging_diagonal_time_tps + 1)
 
-    # initialize Ridge
-    ridge = Ridge(alpha=200.0, fit_intercept=False)
-
     # allocate once per task
     X = np.empty((rdm_len, max_predictors), dtype=neural_rdm_series.dtype)
     y = neural_rdm_series[i, t_neural]
     y = zscore(y)
     result = np.zeros((n_models, subsample_tps), dtype=neural_rdm_series.dtype)
-    
+
+    lasso = Lasso(alpha=0.2, fit_intercept=False, max_iter=10000)
 
     for t_model in range(subsample_tps):
         start = max(0, t_model - averaging_diagonal_time_tps)
@@ -88,23 +88,15 @@ def compute_single_t_neural_task(i, t_neural,
             # zscore scale
             Z = zscore(X[:, :n_predictors])
 
-            # do ridge regression
-            ridge.fit(Z, y)
-            betas = ridge.coef_
+            lasso.fit(Z, y)
+            betas = lasso.coef_
 
-            # or do ridge w/o sklearn 
-            # alpha = 10.0  # regularization strength
-            # XtX = Z.T @ Z
-            # ridge_betas = np.linalg.solve(XtX + alpha * np.eye(Z.shape[1]),
-            #                             Z.T @ y)
-            # betas = ridge_betas
-            
             result[m_interest, t_model] = betas[0]
 
     return (i, t_neural, result)
 
 
-def compute_rsa_matrix_Ridge(neural_rdm_series, model_rdm_series_list,
+def compute_rsa_matrix(neural_rdm_series, model_rdm_series_list,
                            averaging_diagonal_time_tps=300,
                            variance_threshold=0.99, client=None):
 

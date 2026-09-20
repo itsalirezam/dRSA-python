@@ -119,9 +119,9 @@ def compute_single_t_neural_task(i, t_neural,
     return (i, t_neural, result)
 
 
-def compute_rsa_matrix_PCR(neural_rdm_series, model_rdm_series_list,
+def compute_rsa_matrix(neural_rdm_series, model_rdm_series_list,
                            averaging_diagonal_time_tps=300,
-                           variance_threshold=0.999, client=None):
+                           variance_threshold=0.99, client=None):
 
     if client is None:
         raise ValueError("A Dask client must be provided for parallel computation.")
