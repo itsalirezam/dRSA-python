@@ -1,6 +1,6 @@
 # ===== Data =====
 
-neural_data_folder_path: /Users/delacroix/Documents/Academia/Projects/Predictive Processing/data and code/ecog_data/npa/
+neural_data_folder_path: /PATH/to/folder/
 simulation: false
 simulation_neural_data_path: 
 
@@ -11,15 +11,15 @@ region: all
 
 models:
   - name: Spectrogram
-    path: /Users/delacroix/Documents/Coding/dRSA/dRSA-Python/data/spectrogram.npy
+    path: /PATH/to/npa
     rdm_metric: cosine
 
   # - name: Wav2vec Phonetic
-  #   path: ../data/wav2vec2-Large-avg9-12midLayers-Phone.npy
+  #   path: ..
   #   rdm_metric: cosine
 
   # - name: Word2Vec
-  #   path: ../data/word2vec-GoogleNews.npy
+  #   path: ..
   #   rdm_metric: cosine
 
 neural_rdm_metric: correlation
@@ -32,7 +32,7 @@ custom_rsa_computation_module: PCR_dask     # only read if method != 'correlatio
 # ===== Mask =====
 
 mask: true
-mask_path: /Users/delacroix/Documents/Coding/dRSA/dRSA-Python/data/mask_silence-p1s.npy
+mask_path: /PATH/file.npy
 
 # ===== Parameters =====
 
@@ -47,7 +47,7 @@ resolution: 100
 # ===== Time lock =====
 
 time_lock: false # just aligns candidate indices at center
-candidate_path: /Users/delacroix/Documents/Coding/dRSA/exploring models/candidate_start_tp-idx-Q25.npy
+candidate_path: /PATH/file.npy
 
 
 # ===== makeplot-only parameters, here for easy access =====

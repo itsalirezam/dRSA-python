@@ -2,6 +2,8 @@ import numpy as np
 from scipy.spatial.distance import pdist
 import importlib
 
+CUSTOM_MODULE_DIR = Path(__file__).resolve().parent / "modules"
+
 def zscore(X, axis=0):
     mean = np.mean(X, axis=axis, keepdims=True)
     std = np.std(X, axis=axis, keepdims=True)
@@ -172,25 +174,6 @@ def compute_rsa_matrix_corr(neural_rdm_series, model_rdm_series):
     averaged_rsa = rsa_all.mean(axis=0)
     return averaged_rsa
 
-
-# def compute_lag_correlation(rsa_matrix, averaging_diagonal_time_window):
-#     """
-#     Computes lag correlation (diagonal average) from RSA matrix,
-#     restricted to ± averaging_diagonal_time_window (in timepoints).
-#     """
-#     max_lag = averaging_diagonal_time_window
-
-#     lags = np.arange(-max_lag, max_lag + 1)
-#     lag_corr = np.zeros_like(lags, dtype=float)
-
-#     for i, lag in enumerate(lags):
-#         diag_vals = np.diagonal(rsa_matrix.T, offset=lag) # transpose so that diagonal averaging calculates neural time - model time
-#         lag_corr[i] = np.nanmean(diag_vals)
-
-#     return lags, lag_corr
-
-
-
 # predictability explorations
 
 def subsampling_timelock(n_timepoints, subsample_tps, n_subsamples, iterations, manual_start_candidates=None, mask=None, random_state=None):
@@ -278,25 +261,6 @@ def subsampling_timelock(n_timepoints, subsample_tps, n_subsamples, iterations, 
     indices = starts[:, :, None] + window  # (iterations, n_subsamples, subsample_tps)
     return indices
 
-# def compute_lag_correlation_timelock(rsa_matrix, averaging_diagonal_time_window, tps_from_center):
-#     """
-#     Computes lag correlation (diagonal average) from RSA matrix,
-#     restricted to ± averaging_diagonal_time_window (in timepoints).
-
-#     edits: instead of tps, tps, only take 
-#     """
-#     max_lag = averaging_diagonal_time_window
-
-#     lags = np.arange(-max_lag, max_lag + 1)
-#     lag_corr = np.zeros_like(lags, dtype=float)
-
-#     for i, lag in enumerate(lags):
-#         diag_vals = np.diagonal(rsa_matrix.T, offset=lag)
-#         center = len(diag_vals) // 2
-#         window_vals = diag_vals[center : center + tps_from_center]
-#         lag_corr[i] = np.nanmean(window_vals)
-
-#     return lags, lag_corr
 
 # not used in main.py but used on makeplot.py
 def compute_lag_correlation(rsa_matrix, adtw_in_tps, tps_from_center=None):
@@ -313,10 +277,6 @@ def compute_lag_correlation(rsa_matrix, adtw_in_tps, tps_from_center=None):
 
     return lags, lag_corr
 
-# note: why transpose 
-# offset = column index - row index
-# in rsa_matrix axis 0 (rows) corresponds to neural time, but after transposing it's model time
-
 
 def resolve_rsa_function(rsa_computation_method, custom_rsa_computation_module=None):
     if rsa_computation_method == 'correlation':
@@ -327,11 +287,18 @@ def resolve_rsa_function(rsa_computation_method, custom_rsa_computation_module=N
             f"rsa_computation_method={rsa_computation_method!r} requires "
             f"custom_rsa_computation_module to be set in config.yaml"
         )
+    
+    mod_path = CUSTOM_MODULE_DIR / f"{custom_rsa_computation_module}.py"
+    if not mod_path.exists():
+        raise FileNotFoundError(f"Custom RSA module not found: {mod_path}")
 
-    mod = importlib.import_module(custom_rsa_computation_module)
+    spec = importlib.util.spec_from_file_location(custom_rsa_computation_module, mod_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
     if not hasattr(mod, 'compute_rsa_matrix'):
         raise AttributeError(
-            f"{custom_rsa_computation_module} must define compute_rsa_matrix(...)"
+            f"{mod_path} must define compute_rsa_matrix(...)"
         )
     return mod.compute_rsa_matrix
 

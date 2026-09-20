@@ -14,6 +14,8 @@ import argparse, importlib
 
 from core_functions import *
 from makeplot import make_plots
+from core_functions import CUSTOM_MODULE_DIR
+
 
 print(f'\n\nStarted on {time.ctime()} Local Time')
 
@@ -57,7 +59,8 @@ if args.dask:
 
     dask_client.upload_file('core_functions.py')
     if rsa_computation_method != 'correlation' and custom_rsa_computation_module:
-        dask_client.upload_file(f"{custom_rsa_computation_module}.py")
+        mod_path = CUSTOM_MODULE_DIR / f"{custom_rsa_computation_module}.py"
+        dask_client.upload_file(str(mod_path))
 
 elif args.scheduler:
     parser.error("--scheduler was given but --dask was not set — did you forget --dask?")
