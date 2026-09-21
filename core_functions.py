@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.distance import pdist
 import importlib
+from pathlib import Path
 
 CUSTOM_MODULE_DIR = Path(__file__).resolve().parent / "modules"
 
