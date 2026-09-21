@@ -9,7 +9,7 @@ PCR2 means PCs are taken that meet a threshold of explaining more than x varianc
 '''
 
 import numpy as np
-from core_functions_v7 import compute_rsa_matrix_corr, compute_lag_correlation, zscore
+from core_functions import compute_rsa_matrix_corr, compute_lag_correlation, zscore
 from sklearn.decomposition import PCA
 
 from dask.distributed import progress
@@ -113,7 +113,7 @@ def compute_single_t_neural_task(i, t_neural,
 
 def compute_rsa_matrix(neural_rdm_series, model_rdm_series_list,
                            averaging_diagonal_time_tps=300,
-                           variance_threshold=0.001, client=None):
+                           variance_threshold=0.001, dask_client=None):
 
     if client is None:
         raise ValueError("A Dask client must be provided for parallel computation.")

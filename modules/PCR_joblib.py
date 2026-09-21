@@ -5,7 +5,7 @@ runs on a single cluster node using all the available cores
 '''
 
 import numpy as np
-from core_functions_v7 import compute_rsa_matrix_corr, compute_lag_correlation, zscore
+from core_functions import compute_rsa_matrix_corr, compute_lag_correlation, zscore
 from sklearn.decomposition import PCA
 from joblib import Parallel, delayed
 
@@ -118,7 +118,7 @@ def compute_rsa_matrix(
     averaging_diagonal_time_tps=300,
     variance_threshold=0.99,
     n_jobs=-1,
-    client=None
+    dask_client=None
 ):
     iterations, subsample_tps, rdm_len = neural_rdm_series.shape
     n_models = len(model_rdm_series_list)
