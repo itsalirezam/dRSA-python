@@ -1,5 +1,9 @@
 import numpy as np
 from scipy.spatial.distance import pdist
+import importlib
+from pathlib import Path
+
+CUSTOM_MODULE_DIR = Path(__file__).resolve().parent / "modules"
 
 def zscore(X, axis=0):
     mean = np.mean(X, axis=axis, keepdims=True)
@@ -32,7 +36,7 @@ def subsampling(n_timepoints, subsample_tps, n_subsamples, iterations, mask=None
     indices : ndarray, shape (iterations, n_subsamples, subsample_tps)
         Integer indices for each subsample window.
     """
-    
+
     if subsample_tps <= 0:
         raise ValueError("subsample_tps must be positive.")
     if n_timepoints < subsample_tps:
@@ -94,7 +98,7 @@ def subsampling(n_timepoints, subsample_tps, n_subsamples, iterations, mask=None
 
 def apply_subsampling_indices(data, subsample_indices):
     """
-    Applies precomputed subsampling indices using NumPy indexing (for efficiency).
+    Efficiently applies precomputed subsampling indices using NumPy advanced indexing.
 
     Parameters:
     - data: (features, timepoints) array
@@ -164,11 +168,14 @@ def compute_rsa_matrix_corr(neural_rdm_series, model_rdm_series):
 
     # Compute cosine similarity using dot products: (iterations, subsample_tps, subsample_tps)
     rsa_all = np.matmul(neural_z, model_z.transpose(0, 2, 1)) / rdm_len
+    # (iterations, tps, rdm_len) @ (iterations, rdm_len, tps) --> (iterations, tps, tps) - divided by norm to get the values in -1,1 range
+    # cosine similarity after standardizing is the same as correlation
 
     # Average across iterations
     averaged_rsa = rsa_all.mean(axis=0)
     return averaged_rsa
 
+# predictability explorations
 
 def subsampling_timelock(n_timepoints, subsample_tps, n_subsamples, iterations, manual_start_candidates=None, mask=None, random_state=None):
     """
@@ -256,25 +263,118 @@ def subsampling_timelock(n_timepoints, subsample_tps, n_subsamples, iterations, 
     return indices
 
 
-def compute_lag_correlation(rsa_matrix, averaging_diagonal_time_window, tps_from_center=None):
-    """
-    Computes lag correlation (diagonal average) from RSA matrix,
-    restricted to ± averaging_diagonal_time_window (in timepoints).
-    """
-    max_lag = averaging_diagonal_time_window
-
-    lags = np.arange(-max_lag, max_lag + 1)
+# not used in main.py but used on makeplot.py
+def compute_lag_correlation(rsa_matrix, adtw_in_tps, tps_from_center=None):
+    """Diagonal-averaged lag correlation from a single (tps, tps) RSA matrix."""
+    lags = np.arange(-adtw_in_tps, adtw_in_tps + 1)
     lag_corr = np.zeros_like(lags, dtype=float)
 
-    if tps_from_center == None:
-        for i, lag in enumerate(lags):
-            diag_vals = np.diagonal(rsa_matrix.T, offset=lag)
-            lag_corr[i] = np.nanmean(diag_vals)
-    else: # time lock
-        for i, lag in enumerate(lags):
-            diag_vals = np.diagonal(rsa_matrix.T, offset=lag)
+    for i, lag in enumerate(lags):
+        diag_vals = np.diagonal(rsa_matrix.T, offset=lag)
+        if tps_from_center is not None:
             center = len(diag_vals) // 2
-            window_vals = diag_vals[center : center + tps_from_center]
-            lag_corr[i] = np.nanmean(window_vals)
+            diag_vals = diag_vals[center: center + tps_from_center]
+        lag_corr[i] = np.nanmean(diag_vals)
 
     return lags, lag_corr
+
+
+def resolve_rsa_function(rsa_computation_method, custom_rsa_computation_module=None):
+    if rsa_computation_method == 'correlation':
+        return compute_rsa_matrix_corr  # built-in, no import needed
+
+    if not custom_rsa_computation_module:
+        raise ValueError(
+            f"rsa_computation_method={rsa_computation_method!r} requires "
+            f"custom_rsa_computation_module to be set in config.yaml"
+        )
+    
+    mod_path = CUSTOM_MODULE_DIR / f"{custom_rsa_computation_module}.py"
+    if not mod_path.exists():
+        raise FileNotFoundError(f"Custom RSA module not found: {mod_path}")
+
+    spec = importlib.util.spec_from_file_location(custom_rsa_computation_module, mod_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    if not hasattr(mod, 'compute_rsa_matrix'):
+        raise AttributeError(
+            f"{mod_path} must define compute_rsa_matrix(...)"
+        )
+    return mod.compute_rsa_matrix
+
+
+# put the building blocks together and run the pipeline
+def run_drsa_pipeline(
+    neural_data,
+    models,
+    model_labels,
+    model_rdm_metrics,
+    neural_rdm_metric,
+    rsa_computation_method,
+    n_subsamples,
+    subsampling_iterations,
+    subsample_tps,
+    adtw_in_tps,
+    time_lock=False,
+    manual_subsample_start_candidates=None,
+    mask=None,
+    double_precision=True,
+    random_state=None,
+    custom_rsa_computation_module=None,
+    dask_client=None,
+):
+    """Run the dRSA pipeline: subsample -> RDM series -> RSA matrices.
+
+    Returns rsa_matrices
+    """
+    tps = neural_data.shape[1]
+
+    if not time_lock:
+        subsample_indices = subsampling(
+            tps, subsample_tps, n_subsamples, subsampling_iterations,
+            mask=mask, random_state=random_state,
+        )
+    else:
+        subsample_indices = subsampling_timelock(
+            tps, subsample_tps, n_subsamples, subsampling_iterations,
+            manual_start_candidates=manual_subsample_start_candidates,
+            mask=mask, random_state=random_state,
+        )
+    print("\u2713 subsample indices")
+
+    subsampled_neural = apply_subsampling_indices(neural_data, subsample_indices)
+    subsampled_models = [apply_subsampling_indices(m, subsample_indices) for m in models]
+    print("\u2713 extract subsamples from data")
+
+    neural_rdm_series = compute_rdm_series(subsampled_neural, neural_rdm_metric)
+    print("\u2713 compute neural RDM series")
+    model_rdm_series_list = [
+        compute_rdm_series(sm, metric)
+        for sm, metric in zip(subsampled_models, model_rdm_metrics)
+    ]
+    print("\u2713 compute model RDM series")
+    if not double_precision:
+        neural_rdm_series = neural_rdm_series.astype(np.float32)
+        model_rdm_series_list = [s.astype(np.float32) for s in model_rdm_series_list]
+    print("... computing dRSA matrices")
+
+    rsa_fn = resolve_rsa_function(rsa_computation_method, custom_rsa_computation_module)
+
+    if rsa_computation_method == 'correlation':
+        # rsa_matrices = [rsa_fn(neural_rdm_series, s) for s in model_rdm_series_list]
+        rsa_matrices = np.empty(
+            (len(model_rdm_series_list), subsample_tps, subsample_tps),
+            dtype=neural_rdm_series.dtype
+        )
+        for i, s in enumerate(model_rdm_series_list):
+            rsa_matrices[i] = rsa_fn(neural_rdm_series, s)
+    else:
+        rsa_matrices = np.asarray(rsa_fn(
+            neural_rdm_series, model_rdm_series_list,
+            averaging_diagonal_time_tps=adtw_in_tps,
+            dask_client=dask_client,
+        ))
+    print("\u2713 compute dRSA matrices")
+
+    return rsa_matrices

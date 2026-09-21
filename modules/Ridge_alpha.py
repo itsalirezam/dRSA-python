@@ -1,6 +1,6 @@
 import numpy as np
-from sklearn.decomposition import PCA
-from functions.core_functions import zscore, compute_rsa_matrix_corr, compute_lag_correlation
+from sklearn.linear_model import Ridge
+from core_functions import zscore, compute_rsa_matrix_corr, compute_lag_correlation
 
 def regression_border(model_rdm_series_list, averaging_diagonal_time_tps, correlation_threshold=0.1):
     '''
@@ -26,10 +26,10 @@ def regression_border(model_rdm_series_list, averaging_diagonal_time_tps, correl
     return exclusion_window_for_models
 
 
-def compute_rsa_matrix_PCR(neural_rdm_series, model_rdm_series_list,
+def compute_rsa_matrix(neural_rdm_series, model_rdm_series_list,
                            averaging_diagonal_time_tps=300,
-                           variance_threshold=0.85,
-                           client=None):
+                           variance_threshold=0.99,
+                           dask_client=None):
 
     iterations, subsample_tps, rdm_len = neural_rdm_series.shape
     n_models = len(model_rdm_series_list)
@@ -40,8 +40,8 @@ def compute_rsa_matrix_PCR(neural_rdm_series, model_rdm_series_list,
     max_predictors = 1 + n_models * (2 * averaging_diagonal_time_tps + 1)
     X = np.empty((rdm_len, max_predictors), dtype=neural_rdm_series.dtype)  # pre-allocated
 
-    # PCA initialization
-    pca = PCA(svd_solver='full')
+    # initialize ridge
+    ridge = Ridge(alpha=200.0, fit_intercept=False)
 
     # compute exclusion windows once
     exclusion_windows = regression_border(model_rdm_series_list, averaging_diagonal_time_tps)
@@ -86,18 +86,21 @@ def compute_rsa_matrix_PCR(neural_rdm_series, model_rdm_series_list,
                     X[:, col:col+k] = sm.T
                     n_predictors = 1 + (num_other_models * window_len) + k
 
-                    # zscore and PCA
-                    X_scaled = zscore(X[:, :n_predictors])
-                    X_pca = pca.fit_transform(X_scaled) # get PCA scores (each time point rdm in the new PC space)
-                    explained = np.cumsum(pca.explained_variance_ratio_)
-                    n_components = int(np.searchsorted(explained, variance_threshold) + 1)
-                    X_pca_reduced = X_pca[:, :n_components]
-                    loadings_reduced = pca.components_[:n_components, :]
+                    # zscore scale
+                    Z = zscore(X[:, :n_predictors])
 
-                    # regression
-                    betas, *_ = np.linalg.lstsq(X_pca_reduced, y, rcond=None)
-                    beta_model_space = loadings_reduced.T @ betas
-                    result[m_interest, t_model] = beta_model_space[0]
+                    # do ridge regression
+                    ridge.fit(Z, y)
+                    betas = ridge.coef_
+
+                    # or do ridge w/o sklearn 
+                    # alpha = 10.0  # regularization strength
+                    # XtX = Z.T @ Z
+                    # ridge_betas = np.linalg.solve(XtX + alpha * np.eye(Z.shape[1]),
+                    #                             Z.T @ y)
+                    # betas = ridge_betas
+
+                    result[m_interest, t_model] = betas[0]
 
             # write local buffer to main holder
             rsa_holder_per_iteration_per_model[:, i, t_neural, :] = result

@@ -1,15 +1,23 @@
 '''
-Lasso Regression instead of PCA
+Ridge Regression instead of PCA
 
 '''
 
 
 import numpy as np
-from core_functions_v7 import compute_rsa_matrix_corr, compute_lag_correlation, zscore
+from core_functions import compute_rsa_matrix_corr, compute_lag_correlation, zscore
+from sklearn.decomposition import PCA
 
+from itertools import repeat
 from dask.distributed import Future, progress
-from sklearn.linear_model import Lasso
 
+from threading import Lock
+log_lock = Lock()
+
+def log_message(message, log_path="progress_log.txt"):
+    with log_lock:
+        with open(log_path, "a") as f:
+            f.write(message + "\n")
 
 def regression_border(model_rdm_series_list, averaging_diagonal_time_tps, correlation_threshold=0.1):
     '''
@@ -52,8 +60,7 @@ def compute_single_t_neural_task(i, t_neural,
     y = neural_rdm_series[i, t_neural]
     y = zscore(y)
     result = np.zeros((n_models, subsample_tps), dtype=neural_rdm_series.dtype)
-
-    lasso = Lasso(alpha=0.2, fit_intercept=False, max_iter=10000)
+    
 
     for t_model in range(subsample_tps):
         start = max(0, t_model - averaging_diagonal_time_tps)
@@ -88,17 +95,22 @@ def compute_single_t_neural_task(i, t_neural,
             # zscore scale
             Z = zscore(X[:, :n_predictors])
 
-            lasso.fit(Z, y)
-            betas = lasso.coef_
+            # loadings = pca.components_  # (n_components, n_predictors)
+
+            alpha = 10.0  # regularization strength
+            XtX = Z.T @ Z
+            ridge_betas = np.linalg.solve(XtX + alpha * np.eye(Z.shape[1]),
+                                        Z.T @ y)
+            betas = ridge_betas
 
             result[m_interest, t_model] = betas[0]
 
     return (i, t_neural, result)
 
 
-def compute_rsa_matrix_PCR(neural_rdm_series, model_rdm_series_list,
+def compute_rsa_matrix(neural_rdm_series, model_rdm_series_list,
                            averaging_diagonal_time_tps=300,
-                           variance_threshold=0.99, client=None):
+                           variance_threshold=0.99, dask_client=None):
 
     if client is None:
         raise ValueError("A Dask client must be provided for parallel computation.")
