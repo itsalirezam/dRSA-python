@@ -123,7 +123,7 @@ def compute_rsa_matrix(neural_rdm_series, model_rdm_series_list,
                            averaging_diagonal_time_tps=300,
                            variance_threshold=0.99, dask_client=None):
 
-    if client is None:
+    if dask_client is None:
         raise ValueError("A Dask client must be provided for parallel computation.")
 
     iterations, subsample_tps, _ = neural_rdm_series.shape
@@ -134,8 +134,8 @@ def compute_rsa_matrix(neural_rdm_series, model_rdm_series_list,
     print("\u2713 compute regression borders", flush=True)
 
     # scatter the data for dask
-    neural_f = client.scatter(neural_rdm_series)
-    models_f = client.scatter(model_rdm_series_list)
+    neural_f = dask_client.scatter(neural_rdm_series)
+    models_f = dask_client.scatter(model_rdm_series_list)
     print("\u2713 scatter arrays on workers", flush=True)
 
     # task args
@@ -147,7 +147,7 @@ def compute_rsa_matrix(neural_rdm_series, model_rdm_series_list,
             t_list.append(t)
 
     # map the top-level task, passing Futures
-    results = client.map(
+    results = dask_client.map(
         compute_single_t_neural_task,
         i_list,
         t_list,
@@ -159,7 +159,7 @@ def compute_rsa_matrix(neural_rdm_series, model_rdm_series_list,
     )
     print("\u2713 submit tasks to workers", flush=True)
     progress(results, interval=5*60) # Show progress every 5 minutes
-    results = client.gather(results)
+    results = dask_client.gather(results)
 
     # assemble outputs
     rsa_holder = np.zeros((n_models, iterations, subsample_tps, subsample_tps), dtype=neural_rdm_series.dtype)
