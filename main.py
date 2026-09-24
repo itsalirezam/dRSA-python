@@ -175,13 +175,19 @@ rsa_matrices = run_drsa_pipeline(
 )
 
 
+output_dir = config.get('output_directory')
+if output_dir is not None:
+    output_dir = Path(output_dir)
+else:
+    output_dir = Path('_results')
+
+os.makedirs(output_dir, exist_ok=True)
+
 file_name = f'sub{subject}-{frequency_band}_dRSA_matrices-{rsa_computation_method}-TL{time_lock}'
 
 ## save dRSA matrices
 if save_rsa_matrices:
-    os.makedirs('_results', exist_ok=True)
-    output_path = Path('_results')
-    np.save(output_path / file_name, rsa_matrices)
+    np.save(output_dir / file_name, rsa_matrices)
 
     # save labels for plotting later
     with open("_results/selected_model_labels.json", "w") as f:
@@ -194,7 +200,7 @@ if save_plots:
         model_labels=selected_models_labels,
         resolution=resolution,
         averaging_diagonal_time_window_sec=averaging_diagonal_time_window_sec,
-        output_dir=Path('_results'),
+        output_dir=output_dir,
         plotting_config=config,
         custom_name=file_name
     )

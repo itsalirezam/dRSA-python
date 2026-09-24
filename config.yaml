@@ -63,3 +63,5 @@ tps_from_center: 15                # tps from center to take for the frame
 double_precision: false
 save_rsa_matrices: true
 save_plots: true
+
+output_directory:           # leave empty for default
