@@ -96,17 +96,17 @@ def load_model_labels(labels_path: Path, n_models: int) -> list:
 
 
 def get_unique_path(directory: Path, filename: str) -> Path:
-    """Returns a path that won't overwrite an existing file: name.png, name_1.png, name_2.png ..."""
+    """Return a path that won't overwrite an existing file."""
     directory = Path(directory)
     full_path = directory / filename
-    if full_path.suffix == "":
-        full_path = full_path.with_suffix(".png")
-        
+
     base, ext = full_path.stem, full_path.suffix
     i = 1
+    
     while full_path.exists():
         full_path = directory / f"{base}_{i}{ext}"
         i += 1
+
     return full_path
 
 

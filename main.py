@@ -11,9 +11,10 @@ import json, os, sys, time, re
 import yaml
 from pathlib import Path
 import argparse, importlib
+import shutil
 
 from core_functions import *
-from makeplot import make_plots
+from makeplot import make_plots, get_unique_path
 from core_functions import CUSTOM_MODULE_DIR
 
 
@@ -175,23 +176,35 @@ rsa_matrices = run_drsa_pipeline(
 )
 
 
+# ===== save files =====
+
 output_dir = config.get('output_directory')
+
 if output_dir is not None:
     output_dir = Path(output_dir)
 else:
     output_dir = Path('_results')
 
-os.makedirs(output_dir, exist_ok=True)
+output_dir.mkdir(parents=True, exist_ok=True)
 
-file_name = f'sub{subject}-{frequency_band}_dRSA_matrices-{rsa_computation_method}-TL{time_lock}'
+file_name = (
+    f'sub{subject}-{frequency_band}_dRSA_matrices-{rsa_computation_method}-TL{time_lock}'
+)
 
-## save dRSA matrices
+## Save dRSA matrices
+file_path = get_unique_path(output_dir, file_name + '.npy')
 if save_rsa_matrices:
-    np.save(output_dir / file_name, rsa_matrices)
+    np.save(file_path, rsa_matrices)
 
-    # save labels for plotting later
-    with open("_results/selected_model_labels.json", "w") as f:
+    ### Save labels for plotting later
+    with open(output_dir / 'selected_model_labels.json', 'w') as f:
         json.dump(selected_models_labels, f)
+
+    ### Save config file for reference
+    save_config_path = output_dir / 'configs'
+    save_config_path.mkdir(parents=True, exist_ok=True)
+    config_file_path = save_config_path / file_path.with_suffix('.yaml').name
+    shutil.copy2(config_path, config_file_path)
 
 ## save plot
 if save_plots:
