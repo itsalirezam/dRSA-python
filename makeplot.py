@@ -1,3 +1,5 @@
+# python makeplot.py makeplot-cli-config.yaml {dir or numpy path}
+
 """
 makeplot.py — dRSA plotting module
 
@@ -277,6 +279,7 @@ def make_plots(rsa_data, model_labels, resolution, averaging_diagonal_time_windo
     save_subs_lags = plotting_config.get('save_subs_lags', False)
     TL_frame = plotting_config.get('TL_frame', False)
     tps_from_center = plotting_config.get('tps_from_center', None) if TL_frame else None
+    selected_models_idx = plotting_config.get('selected_models_idx', None)
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -286,6 +289,10 @@ def make_plots(rsa_data, model_labels, resolution, averaging_diagonal_time_windo
         rsa_data = rsa_data[np.newaxis, ...]
     elif rsa_data.ndim != 4:
         raise ValueError(f"Expected rsa_data with 3 or 4 dims, got shape {rsa_data.shape}")
+
+    if selected_models_idx:
+        rsa_data = rsa_data[:, selected_models_idx, ...]
+        model_labels = [model_labels[model_idx] for model_idx in selected_models_idx]
 
     n_subs, n_models = rsa_data.shape[:2]
     if len(model_labels) != n_models:
