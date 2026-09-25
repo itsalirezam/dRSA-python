@@ -39,4 +39,11 @@ plot-config.yaml:  resolution and averaging_diagonal_time_window_sec must match 
 python makeplot.py {config path} {dir or npy path} --labels --output-dir
 ```
 
+- do multiple .npy files in a folder one by one
+```
+for file in /path/to/folder/*.npy; do
+    python makeplot.py makeplot-cli-config.yaml "$file"
+done
+```
+
 the two flags are optional, and will resort to default (same input folder) if not specified
