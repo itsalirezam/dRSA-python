@@ -14,6 +14,3 @@ tps_from_center: 30                # tps from center to take for the frame
 
 # other
 save_subs_lags: false              # true = also dump subs_lags.npy (n_subs, n_models, n_lags)
-
-
-custom_name: output

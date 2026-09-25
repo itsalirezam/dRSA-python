@@ -79,10 +79,11 @@ def load_rsa_data(input_path: Path) -> np.ndarray:
         data = [np.load(f, allow_pickle=True) for f in files]
     elif input_path.is_file():
         data = [np.load(input_path, allow_pickle=True)]
+        file_name_stem = input_path.stem
     else:
         raise FileNotFoundError(f"Path does not exist: {input_path}")
 
-    return np.stack(data)  # (n_subs, n_models, tps, tps)
+    return np.stack(data), file_name_stem  # (n_subs, n_models, tps, tps)
 
 
 def load_model_labels(labels_path: Path, n_models: int) -> list:
@@ -340,7 +341,7 @@ def main():
     with open(args.config_path) as f:
         config = yaml.safe_load(f)
 
-    rsa_data = load_rsa_data(args.input_path)
+    rsa_data, file_name_stem = load_rsa_data(args.input_path)
     n_models = rsa_data.shape[1]
 
     results_dir = args.input_path if args.input_path.is_dir() else args.input_path.parent
@@ -356,7 +357,7 @@ def main():
         averaging_diagonal_time_window_sec=config['averaging_diagonal_time_window_sec'],
         output_dir=output_dir,
         plotting_config=config,
-        custom_name=config.get('custom_name')
+        custom_name=file_name_stem
     )
 
 
