@@ -79,6 +79,7 @@ def load_rsa_data(input_path: Path) -> np.ndarray:
         if not files:
             raise FileNotFoundError(f"No .npy files found in: {input_path}")
         data = [np.load(f, allow_pickle=True) for f in files]
+        file_name_stem = None
     elif input_path.is_file():
         data = [np.load(input_path, allow_pickle=True)]
         file_name_stem = input_path.stem
