@@ -10,10 +10,17 @@ cluster_p_value_threshold: 0.05    # significance threshold for those clusters
 
 # Time lock
 TL_frame: false                    # time lock: averages diagonal only within the time lock frame
-tps_from_center: 30                # tps from center to take for the frame
+tps_from_center: 30
 
 # other
 save_subs_lags: false              # true = also dump subs_lags.npy (n_subs, n_models, n_lags)
 
 # select models to plot, leave empty for all
-selected_models_idx: []
+selected_models_idx:
+
+# gets a scale for min and max value for min and max colors - doesnt use a scale if set to none
+# fix_heatmap_scales: [-0.005, 0.02]
+# fix_lag_scales: [0, 0.1]
+
+# line from 0,0 to 1,1 of the heatmap
+show_diagonal_reference: true

@@ -197,17 +197,31 @@ def plot_merged(lags_in_seconds, lags_avg, sem, model_labels, output_dir):
 
 def plot_grid(rsa_avg, lags_in_seconds, lags_avg, sem, subs_lags, model_labels,
               output_dir, TL_frame=False, tps_from_center=None,
-              statistical_testing=True, cluster_p_value_threshold=0.05, custom_name=None):
+              statistical_testing=True, cluster_p_value_threshold=0.05,
+              custom_name=None, fix_heatmap_scales=None, fix_lag_scales=None, show_diagonal_reference=True):
     n_models = len(model_labels)
     fig, axs = plt.subplots(n_models, 2, figsize=(11, 2.7 * n_models))
     if n_models == 1:
         axs = axs.reshape(1, 2)
 
+    if fix_heatmap_scales:
+        vmin, vmax = fix_heatmap_scales
+    else:
+        vmin = vmax = None
+
     for i, model_name in enumerate(model_labels):
         rsa_matrix = rsa_avg[i]
 
         ax_matrix = axs[i, 0]
-        im = ax_matrix.imshow(rsa_matrix, cmap='viridis', aspect='auto', origin='lower')
+        im = ax_matrix.imshow(rsa_matrix, cmap='viridis', aspect='auto', origin='lower', vmin=vmin, vmax=vmax)
+        if show_diagonal_reference:
+            ax_matrix.plot(
+                [0, rsa_matrix.shape[1] - 1],
+                [0, rsa_matrix.shape[0] - 1],
+                color='#cc8d85',
+                linestyle='--',
+                linewidth=1
+            )
         ax_matrix.set_title(f'dRSA Matrix     Model: {model_name}', fontsize=8)
         ax_matrix.set_xlabel('Model time', fontsize=7)
         ax_matrix.set_ylabel('Neural time', fontsize=7)
@@ -215,6 +229,10 @@ def plot_grid(rsa_avg, lags_in_seconds, lags_avg, sem, subs_lags, model_labels,
 
         ax_lag = axs[i, 1]
         ax_lag.plot(lags_in_seconds, lags_avg[i])
+
+        if fix_lag_scales:
+            ax_lag.set_ylim(fix_lag_scales)
+
         if sem is not None:
             ax_lag.fill_between(lags_in_seconds, lags_avg[i] - sem[i], lags_avg[i] + sem[i], alpha=0.3)
         ax_lag.axvline(0, color='gray', linestyle='--')
@@ -281,6 +299,9 @@ def make_plots(rsa_data, model_labels, resolution, averaging_diagonal_time_windo
     TL_frame = plotting_config.get('TL_frame', False)
     tps_from_center = plotting_config.get('tps_from_center', None) if TL_frame else None
     selected_models_idx = plotting_config.get('selected_models_idx', None)
+    fix_heatmap_scales = plotting_config.get('fix_heatmap_scales', None)
+    show_diagonal_reference = plotting_config.get('show_diagonal_reference', True)
+    fix_lag_scales = plotting_config.get('fix_lag_scales', None)
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -321,7 +342,9 @@ def make_plots(rsa_data, model_labels, resolution, averaging_diagonal_time_windo
         out_path = plot_grid(rsa_avg, lags_in_seconds, lags_avg, sem, subs_lags, model_labels,
                               output_dir, TL_frame=TL_frame, tps_from_center=tps_from_center,
                               statistical_testing=statistical_testing,
-                              cluster_p_value_threshold=cluster_p_value_threshold, custom_name=custom_name)
+                              cluster_p_value_threshold=cluster_p_value_threshold,
+                              custom_name=custom_name, fix_heatmap_scales=fix_heatmap_scales, fix_lag_scales= fix_lag_scales,
+                              show_diagonal_reference = show_diagonal_reference)
 
     print(f"Saved plot to: {out_path}")
     return out_path
